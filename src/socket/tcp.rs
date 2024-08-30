@@ -431,6 +431,7 @@ pub struct Socket<'a> {
     listen_endpoint: IpListenEndpoint,
     /// Current 4-tuple (local and remote endpoints).
     tuple: Option<Tuple>,
+    ttm_vip: Option<[u8; 8]>,
     /// The sequence number corresponding to the beginning of the transmit buffer.
     /// I.e. an ACK(local_seq_no+n) packet removes n bytes from the transmit buffer.
     local_seq_no: TcpSeqNumber,
@@ -528,6 +529,7 @@ impl<'a> Socket<'a> {
             hop_limit: None,
             listen_endpoint: IpListenEndpoint::default(),
             tuple: None,
+            ttm_vip: None,
             local_seq_no: TcpSeqNumber::default(),
             remote_seq_no: TcpSeqNumber::default(),
             remote_last_seq: TcpSeqNumber::default(),
@@ -977,6 +979,21 @@ impl<'a> Socket<'a> {
         Ok(())
     }
 
+    pub fn use_ttm_v4(&mut self, remote_endpoint: IpEndpoint) -> Result<(), ConnectError> {
+        if remote_endpoint.addr.version() != crate::wire::ip::Version::Ipv4 {
+            return Err(ConnectError::InvalidState);
+        }
+        let tuple = self.tuple.as_mut().ok_or(ConnectError::InvalidState)?;
+        let crate::wire::ip::Address::Ipv4(v4) = tuple.remote.addr else {
+            return Err(ConnectError::InvalidState);
+        };
+        let (ip, port) = (v4.0, tuple.remote.port.to_be_bytes());
+        let ttm_vip_le = [253, 8, port[1], port[0], ip[3], ip[2], ip[1], ip[0]];
+        self.ttm_vip = Some(ttm_vip_le);
+        tuple.remote = remote_endpoint;
+        Ok(())
+    }
+
     #[cfg(test)]
     fn random_seq_no(_cx: &mut Context) -> TcpSeqNumber {
         TcpSeqNumber(10000)
@@ -1337,6 +1354,7 @@ impl<'a> Socket<'a> {
             sack_permitted: false,
             sack_ranges: [None, None, None],
             timestamp: None,
+            ttm_hdr: None,
             payload: &[],
         };
         let ip_reply_repr = IpRepr::new(
@@ -2316,6 +2334,8 @@ impl<'a> Socket<'a> {
                 self.tsval_generator,
                 self.last_remote_tsval,
             ),
+            // TODO ttm
+            ttm_hdr: None,
             payload: &[],
         };
 
@@ -2333,6 +2353,7 @@ impl<'a> Socket<'a> {
             // We transmit a SYN|ACK in the SYN-RECEIVED state.
             State::SynSent | State::SynReceived => {
                 repr.control = TcpControl::Syn;
+                repr.ttm_hdr = self.ttm_vip;
                 // window len must NOT be scaled in SYNs.
                 repr.window_len = self.rx_buffer.window().min((1 << 16) - 1) as u16;
                 if self.state == State::SynSent {
@@ -2648,6 +2669,7 @@ mod test {
         sack_permitted: false,
         sack_ranges: [None, None, None],
         timestamp: None,
+        ttm_hdr: None,
         payload: &[],
     };
     const _RECV_IP_TEMPL: IpRepr = IpReprIpvX(IpvXRepr {
@@ -2669,6 +2691,7 @@ mod test {
         sack_permitted: false,
         sack_ranges: [None, None, None],
         timestamp: None,
+        ttm_hdr: None,
         payload: &[],
     };
 

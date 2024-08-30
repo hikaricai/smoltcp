@@ -820,6 +820,7 @@ pub struct Repr<'a> {
     pub sack_permitted: bool,
     pub sack_ranges: [Option<(u32, u32)>; 3],
     pub timestamp: Option<TcpTimestampRepr>,
+    pub ttm_hdr: Option<[u8; 8]>,
     pub payload: &'a [u8],
 }
 
@@ -942,6 +943,7 @@ impl<'a> Repr<'a> {
             sack_permitted: sack_permitted,
             sack_ranges: sack_ranges,
             timestamp: timestamp,
+            ttm_hdr: None,
             payload: packet.payload(),
         })
     }
@@ -974,6 +976,9 @@ impl<'a> Repr<'a> {
         }
         if length % 4 != 0 {
             length += 4 - length % 4;
+        }
+        if self.ttm_hdr.is_some() {
+            length += 8;
         }
         length
     }
@@ -1032,6 +1037,11 @@ impl<'a> Repr<'a> {
                     tsecr: timestamp.tsecr,
                 }
                 .emit(tmp);
+            }
+
+            if let Some(ttm) = self.ttm_hdr.as_ref() {
+                options[0..8].copy_from_slice(ttm);
+                options = &mut options[8..];
             }
 
             if !options.is_empty() {
@@ -1292,6 +1302,7 @@ mod test {
             sack_permitted: false,
             sack_ranges: [None, None, None],
             timestamp: None,
+            ttm_hdr: None,
             payload: &PAYLOAD_BYTES,
         }
     }
