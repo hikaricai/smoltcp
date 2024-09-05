@@ -820,7 +820,7 @@ pub struct Repr<'a> {
     pub sack_permitted: bool,
     pub sack_ranges: [Option<(u32, u32)>; 3],
     pub timestamp: Option<TcpTimestampRepr>,
-    pub ttm_hdr: Option<[u8; 8]>,
+    pub ttm_hdr: Option<[u8; 16]>,
     pub payload: &'a [u8],
 }
 
@@ -978,7 +978,7 @@ impl<'a> Repr<'a> {
             length += 4 - length % 4;
         }
         if self.ttm_hdr.is_some() {
-            length += 8;
+            length += 16;
         }
         length
     }
@@ -1040,8 +1040,8 @@ impl<'a> Repr<'a> {
             }
 
             if let Some(ttm) = self.ttm_hdr.as_ref() {
-                options[0..8].copy_from_slice(ttm);
-                options = &mut options[8..];
+                options[0..16].copy_from_slice(ttm);
+                options = &mut options[16..];
             }
 
             if !options.is_empty() {
