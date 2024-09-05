@@ -343,6 +343,40 @@ impl InterfaceInner {
 
             // Ignore any echo replies.
             Icmpv4Repr::EchoReply { .. } => None,
+            #[cfg(all(feature = "socket-tcp", feature = "proto-ipv4"))]
+            Icmpv4Repr::DstUnreachable {
+                reason,
+                header,
+                data,
+            } => {
+                if reason != Icmpv4DstUnreachable::PortUnreachable {
+                    return None;
+                }
+                if header.next_header != IpProtocol::Tcp {
+                    return None;
+                }
+
+                let tcp_packet = TcpPacket::new_checked(data).ok()?;
+                let local = IpEndpoint::new(
+                    crate::wire::ip::Address::Ipv4(ip_repr.dst_addr),
+                    tcp_packet.src_port(),
+                );
+                let remote = IpEndpoint::new(
+                    crate::wire::ip::Address::Ipv4(ip_repr.src_addr),
+                    tcp_packet.dst_port(),
+                );
+
+                for tcp_socket in _sockets
+                    .items_mut()
+                    .filter_map(|i| crate::socket::tcp::Socket::downcast_mut(&mut i.socket))
+                {
+                    if tcp_socket.accepts_tuple(local, remote) {
+                        tcp_socket.abort();
+                        break;
+                    }
+                }
+                None
+            }
 
             // Don't report an error if a packet with unknown type
             // has been handled by an ICMP socket

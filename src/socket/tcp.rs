@@ -1459,6 +1459,13 @@ impl<'a> Socket<'a> {
         Some(self.ack_reply(ip_repr, repr))
     }
 
+    pub(crate) fn accepts_tuple(&self, local: IpEndpoint, remote: IpEndpoint) -> bool {
+        if let Some(tuple) = &self.tuple {
+            tuple.local == local && tuple.remote == remote
+        } else {
+            false
+        }
+    }
     pub(crate) fn accepts(&self, _cx: &mut Context, ip_repr: &IpRepr, repr: &TcpRepr) -> bool {
         if self.state == State::Closed {
             return false;
